@@ -1,0 +1,89 @@
+
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import {
+   createUserWithEmailAndPassword, 
+   signInWithEmailAndPassword, 
+   signOut, 
+   onAuthStateChanged,
+   fetchSignInMethodsForEmail, 
+   signInWithPopup
+  } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase/firebase.js';
+import { sign } from 'crypto';
+
+interface AuthContextType {
+  user?: any;
+  loading: boolean;
+  signUp: (email: string, password: string, name:string,) => Promise< void >;
+  signIn: (email: string, password: string) => Promise< void >;
+  logOut: () => { };
+  signInWithGoogle?: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  useEffect(()=>{
+    onAuthStateChanged(auth, (user:any) => {
+      if (user) {
+        setUser(user);
+        setLoading(false);
+        console.log("User logged in");
+      } else {
+        console.log("No user is logged in");
+      }
+});
+  },[])
+
+  const signUp = async (email: string, password: string, name: string,) => {
+    
+      const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+      if(signInMethods.length > 0){
+        throw new Error('Email already in use');
+      }else{
+        await createUserWithEmailAndPassword(auth, email, password);
+        const user = {name: name};
+      }
+  };
+
+  const signIn = async (email: string, password: string) => {
+      const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+      if(signInMethods.length === 0){
+        throw new Error('No account found with this email');
+      }else if(signInMethods[0]==='google.com'){
+        throw new Error('Please sign in with Google');
+      }else{
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+      
+  };
+  const signInWithGoogle = async () => {
+    // Implementation for Google Sign-In can be added here
+    await signInWithPopup(auth, googleProvider);
+  }
+  const logOut = async () => {
+    await signOut(auth);
+    setUser(null); // 
+  };
+
+  const value = {
+    user,
+    loading,
+    signUp,
+    signIn,
+    logOut,
+    signInWithGoogle
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
