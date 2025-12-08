@@ -1,4 +1,5 @@
 const { app, BrowserWindow } = require("electron");
+const path = require("path");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -11,11 +12,7 @@ function createWindow() {
     }
   });
 
-  // Load your online Reactron Virtual Lab
   win.loadURL("https://reactron.visualstech.in");
-
-  // For local development:
-  // win.loadURL("http://localhost:8080");
 }
 
 app.whenReady().then(createWindow);

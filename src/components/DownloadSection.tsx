@@ -18,7 +18,7 @@ export default function DownloadSection() {
 
           {/* Windows Download Card */}
           <a
-            href="https://reactron.visualstech.in/downloads/ReactronLauncherSetup.exe"
+            href="https://reactron.visualstech.in/downloads/ReactronLauncherSetup_1.0.0.exe"
             download
             className="group w-full md:w-auto px-8 py-5 rounded-xl bg-[#1a1a1a] border border-white/10 hover:border-white/20 hover:bg-[#222] transition-all flex items-center gap-4"
           >

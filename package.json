@@ -2,8 +2,7 @@
   "name": "vite_react_shadcn_ts",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
-  "main": "main.js",
+  "main": "main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -20,9 +19,9 @@
       "output": "dist_electron"
     },
     "win": {
-    "target": "nsis",
-    "icon": "icon.ico"
-  }
+      "target": "nsis",
+      "icon": "icon.ico"
+    }
   },
   "dependencies": {
     "@firebase/firestore": "^4.9.2",
@@ -103,7 +102,6 @@
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.9",
     "globals": "^15.9.0",
-    "lovable-tagger": "^1.1.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.3",
