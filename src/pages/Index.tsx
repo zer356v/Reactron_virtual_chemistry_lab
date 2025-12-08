@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import {Card,CardContent,CardDescription,CardHeader,CardTitle,} from "@/components/ui/card";
 import { Activity,BarChart3,Sparkles,Route,} from "lucide-react";
 import { motion , AnimatePresence } from "framer-motion";
-import logo from "../assets/Reactron_Logo.png";
 import image from "../assets/image.png";
 import Acid_Base_Titration from "../assets/Acid_Base_Titration.jpg";
 import Salt_Analysis from "../assets/Salt_Analysis.jpg";
@@ -16,7 +15,7 @@ import Laboratory_Skills_Techniques from "../assets/Laboratory_Skills_Techniques
 import Organic_Chemistry_Mechanisms from "../assets/Organic_Chemistry_Mechanisms.jpg";
 import Physical_Chemistry_Fundamentals from "../assets/Physical_Chemistry_Fundamentals.jpg";
 import reactron_bg_video from "../assets/reactron_bg_video.mp4";
-import banner1 from "../assets/banner1.jpg";
+import banner1 from "../assets/Banner1.jpg";
 import banner2 from "../assets/banner2.jpg";
 import banner3 from "../assets/banner3.jpg";
 import banner4 from "../assets/banner4.jpg";
