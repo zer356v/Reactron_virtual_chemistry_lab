@@ -1,4 +1,4 @@
-import { supabase } from "../config/integrations/supabase/client.ts";
+import { supabase } from '../config/integrations/supabase/client.ts';
 
 export const getChemicals = async(req, res) => {
   const {error, data} = await supabase.from('chemicals').select('*');
