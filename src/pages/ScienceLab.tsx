@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Environment, Grid } from "@react-three/drei";
+import { OrbitControls, Environment, Grid, ContactShadows } from "@react-three/drei";
 import { EnhancedLabEquipment } from "@/components/EnhancedLabEquipment";
 import { EquipmentRack } from "@/components/EquipmentRack";
 import { EnhancedLabTable } from "@/components/EnhancedLabTable";
@@ -41,6 +41,10 @@ import logo from "../assets/logo3.png";
 import { Navigate, useNavigate } from "react-router-dom";
 import { FireEffect, Precipitation, UltraLightningV2, VolumetricSmoke  } from "@/components/AdvancedVisualEffects";
 import LiveReactionPanel from "@/components/LiveReactionPanel";
+import * as THREE from "three";
+import { EffectComposer, Bloom, SSAO, ToneMapping } from "@react-three/postprocessing";
+
+
 
 
 interface PlacedEquipment {
@@ -741,71 +745,126 @@ const ScienceLab = () => {
             </div>
 
             <div className="relative flex-1 bg-[#e5e7eb] border border-slate-200 rounded-2xl shadow-inner overflow-hidden">
-              <Canvas
-                camera={{ position: [0, 8, 22], fov: 25 }}
-                shadows
-                className="w-full h-full"
-              >
-                <ambientLight intensity={0.4} />
-                <directionalLight position={[10, 10, 5]} castShadow />
-                <OrbitControls enableZoom enableRotate />
-                <Environment preset="studio" />
+            <Canvas
+              camera={{ position: [0, 6, 18], fov: 32 }}
+              shadows
+              dpr={[1, 2]}
+              gl={{
+                antialias: true,
+                toneMapping: THREE.ACESFilmicToneMapping,
+                outputColorSpace: THREE.SRGBColorSpace,
+              }}
+              className="w-full h-full"
+            >
 
-                <EnhancedLabTable
-                  onEquipmentPlace={handleEquipmentPlace}
-                  placedEquipment={placedEquipment}
-                />
+              {/* --- GLOBAL LIGHTING --- */}
+              <ambientLight intensity={0.25} />
 
-                {placedEquipment.map((eq) => (
-                  <EnhancedLabEquipment
-                    key={eq.id}
-                    selectedEquipment={selectedEquipment}
-                    setSelectedEquipment={setSelectedEquipment}
-                    reactions={reactions}
-                    setReactions={setReactions}
-                    position={eq.position}
-                    equipmentType={eq.type}
-                    equipmentId={eq.id}
-                    equipmentContents={eq.contents}
-                    chemicalObjects={eq.chemicalObjects}
-                    totalVolume={eq.totalVolume}
-                    onVolumeChange={(newVol) =>
-                      handleVolumeChange(eq.id, newVol)
-                    }
-                    onChemicalAdd={(chem, vol) =>
-                      handleChemicalAdd(eq.id, chem, vol)
-                    }
-                  />
-                ))}
-                {/* --- REACTION VISUAL EFFECTS --- */}
-                {activeEffects.map((fx) => {
-                  if (fx.type === "lightning")
-                    return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
+              <directionalLight
+                position={[10, 15, 8]}
+                intensity={1.3}
+                castShadow
+                shadow-mapSize={[4096, 4096]}
+                shadow-bias={-0.0002}
+              />
 
-                  if (fx.type === "fire")
-                    return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  if (fx.type === "smoke")
-                    return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  if (fx.type === "precipitation")
-                    return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  return null;
-                })}
-                <Grid
-                  args={[30, 30]}
+              {/* Soft ground contact shadows */}
+                <ContactShadows
+                  opacity={0.3}
+                  scale={12}
+                  blur={1.5}
+                  far={1.5}
                   position={[0, -0.5, 0]}
-                  cellSize={1}
-                  cellThickness={0.5}
-                  cellColor="#6B7280"
-                  sectionSize={5}
-                  sectionThickness={1}
-                  sectionColor="#374151"
-                  fadeDistance={25}
-                  fadeStrength={1}
                 />
-              </Canvas>
+
+
+              {/* Realistic HDRI Lighting */}
+              <Environment files="/hdri/studio.hdr" background={false} blur={0.15} />
+
+              {/* --- POST PROCESSING EFFECTS --- */}
+              <EffectComposer>
+              <Bloom
+                intensity={0.35}
+                luminanceThreshold={0.4}
+                luminanceSmoothing={0.25}
+              />
+              <SSAO
+                samples={32}
+                rings={7}
+                radius={0.12}
+                intensity={18}
+                luminanceInfluence={0.5}
+                distanceScaling={true}
+                worldDistanceThreshold={0.3}
+                worldDistanceFalloff={0.1}
+                worldProximityThreshold={0.03}
+                worldProximityFalloff={0.01}
+              />
+
+              <ToneMapping adaptive />
+            </EffectComposer>
+
+
+              {/* Camera Controls */}
+              <OrbitControls enableZoom enableRotate />
+
+              {/* --- LAB TABLE --- */}
+              <EnhancedLabTable
+                onEquipmentPlace={handleEquipmentPlace}
+                placedEquipment={placedEquipment}
+              />
+
+              {/* --- EQUIPMENT MODELS --- */}
+              {placedEquipment.map((eq) => (
+                <EnhancedLabEquipment
+                  key={eq.id}
+                  selectedEquipment={selectedEquipment}
+                  setSelectedEquipment={setSelectedEquipment}
+                  reactions={reactions}
+                  setReactions={setReactions}
+                  position={eq.position}
+                  equipmentType={eq.type}
+                  equipmentId={eq.id}
+                  equipmentContents={eq.contents}
+                  chemicalObjects={eq.chemicalObjects}
+                  totalVolume={eq.totalVolume}
+                  onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
+                  onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
+                />
+              ))}
+
+              {/* --- REACTION VISUAL FX --- */}
+              {activeEffects.map((fx) => {
+                if (fx.type === "lightning")
+                  return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                if (fx.type === "fire")
+                  return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                if (fx.type === "smoke")
+                  return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                if (fx.type === "precipitation")
+                  return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                return null;
+              })}
+
+              {/* Floor Grid */}
+              <Grid
+                args={[30, 30]}
+                position={[0, -0.5, 0]}
+                cellSize={1}
+                cellThickness={0.5}
+                cellColor="#6B7280"
+                sectionSize={5}
+                sectionThickness={1}
+                sectionColor="#374151"
+                fadeDistance={25}
+                fadeStrength={1}
+              />
+            </Canvas>
+
             </div>
           </div>
 
