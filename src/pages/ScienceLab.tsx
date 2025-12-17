@@ -800,11 +800,8 @@ const ScienceLab = () => {
                 worldProximityThreshold={0.03}
                 worldProximityFalloff={0.01}
               />
-
               <ToneMapping adaptive />
             </EffectComposer>
-
-
               {/* Camera Controls */}
               <OrbitControls enableZoom enableRotate />
 

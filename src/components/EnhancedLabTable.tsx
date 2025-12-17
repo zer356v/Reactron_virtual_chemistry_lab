@@ -14,28 +14,27 @@ interface GridSlot {
 }
 
 /* =========================
-   CONFIG (ADJUST HERE)
+   CONFIG
 ========================= */
 
-// Table
-const TABLE_SCALE = 3.5;
+// Table scale
+const SIZE_MULTIPLIER = 4;
+const TABLE_SCALE = 3.5 * SIZE_MULTIPLIER;
 const TABLE_OFFSET_Y = -1.2;
 
-// Placeholder (stand)
-const SLOT_RADIUS = 0.42;
+// Slots
+const SLOTS_PER_ROW = 6;
+const SLOT_RADIUS = 0.55;
 const SLOT_HEIGHT = 0.02;
 
-// Vertical alignment
-const SLOT_Y_OFFSET = -1.51;       // placeholder above table
-const EQUIPMENT_Y_OFFSET = 0.74;   // equipment above placeholder
+// Slot layout (LOCAL SPACE)
+const SLOT_START_X = -3.8;     // left edge of table
+const SLOT_END_X = 3.8;        // right edge of table
+const ROW_Z_OFFSET = 0.55;     // front/back rows
 
-// Right table layout (2 x 10)
-const RIGHT_COL_SPACING = 1.8;
-const RIGHT_ROW_TOP_Z = -1.4;
-const RIGHT_ROW_BOTTOM_Z = -2.6;
-
-// Left table layout (1 x 5)
-const LEFT_ROW_SPACING = 0.9;
+// Vertical offsets
+const SLOT_Y_OFFSET = 0.52;
+const EQUIPMENT_Y_OFFSET = 0.9;
 
 /* =========================
    Props
@@ -63,11 +62,11 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   const [tableTopY, setTableTopY] = useState(0);
 
   /* =========================
-     Load Table Model
+     Load Table
   ========================= */
 
-  const table = useGLTF('/models/chemistry-lab-table/source/Table_02.glb');
-  useGLTF.preload('/models/chemistry-lab-table/source/Table_02.glb');
+  const table = useGLTF('/models/studio2.glb');
+  useGLTF.preload('/models/studio2.glb');
 
   useEffect(() => {
     table.scene.traverse((obj: any) => {
@@ -79,7 +78,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   }, [table]);
 
   /* =========================
-     Detect REAL Table Top Y
+     Table Top Height
   ========================= */
 
   useEffect(() => {
@@ -90,37 +89,27 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   }, [table]);
 
   /* =========================
-     Slot Layout
-========================= */
+     SLOT LAYOUT (FINAL)
+  ========================= */
 
   const slots: GridSlot[] = useMemo(() => {
-    return [
-      /* ---------- RIGHT TABLE (2 x 10) ---------- */
-      ...Array.from({ length: 10 }).flatMap((_, i) => {
-        const x = -8 + i * RIGHT_COL_SPACING;
+    const spacing =
+      (SLOT_END_X - SLOT_START_X) / (SLOTS_PER_ROW - 1);
 
-        return [
-          {
-            id: `right-top-${i}`,
-            position: [x, tableTopY, RIGHT_ROW_TOP_Z] as [number, number, number],
-          },
-          {
-            id: `right-bottom-${i}`,
-            position: [x, tableTopY, RIGHT_ROW_BOTTOM_Z] as [number, number, number],
-          },
-        ];
-      }),
+    return Array.from({ length: SLOTS_PER_ROW }).flatMap((_, i) => {
+      const x = SLOT_START_X + i * spacing;
 
-      /* ---------- LEFT TABLE (1 x 5) ---------- */
-      ...Array.from({ length: 5 }).map((_, i) => ({
-        id: `left-${i}`,
-        position: [
-          -10.2,
-          tableTopY,
-          -0.6 + i * LEFT_ROW_SPACING,
-        ] as [number, number, number],
-      })),
-    ];
+      return [
+        {
+          id: `row1-${i}`,
+          position: [x, tableTopY, -ROW_Z_OFFSET],
+        },
+        {
+          id: `row2-${i}`,
+          position: [x, tableTopY, ROW_Z_OFFSET],
+        },
+      ] as GridSlot[];
+    });
   }, [tableTopY]);
 
   /* =========================
@@ -129,7 +118,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
 
   const isSlotOccupied = (pos: [number, number, number]) =>
     placedEquipment.some(eq =>
-      Math.hypot(eq.position[0] - pos[0], eq.position[2] - pos[2]) < 0.6
+      Math.hypot(eq.position[0] - pos[0], eq.position[2] - pos[2]) < 0.9
     );
 
   const handlePlace = (slot: GridSlot) => {
@@ -156,7 +145,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
     tableRootRef.current.traverse((obj: any) => {
       if (obj.material?.emissive) {
         obj.material.emissiveIntensity = isDragging
-          ? 0.12 + Math.sin(clock.elapsedTime * 4) * 0.04
+          ? 0.15 + Math.sin(clock.elapsedTime * 4) * 0.05
           : 0;
       }
     });
@@ -168,7 +157,6 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
 
   return (
     <group ref={tableRootRef}>
-      {/* ===== TABLE ===== */}
       <group
         ref={tableGroupRef}
         position={[0, TABLE_OFFSET_Y, 0]}
@@ -176,30 +164,30 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         scale={[TABLE_SCALE, TABLE_SCALE, TABLE_SCALE]}
       >
         <primitive object={table.scene} />
+
+        {/* ===== PLACEHOLDERS ===== */}
+        {isDragging &&
+          slots.map(slot => {
+            const occupied = isSlotOccupied(slot.position);
+
+            return (
+              <mesh
+                key={slot.id}
+                position={slot.position}
+                onClick={() => handlePlace(slot)}
+              >
+                <cylinderGeometry
+                  args={[SLOT_RADIUS, SLOT_RADIUS, SLOT_HEIGHT, 24]}
+                />
+                <meshStandardMaterial
+                  color={occupied ? '#ff6b6b' : '#ffffff'}
+                  transparent
+                  opacity={0.75}
+                />
+              </mesh>
+            );
+          })}
       </group>
-
-      {/* ===== PLACEHOLDERS (ONLY WHILE DRAGGING) ===== */}
-      {isDragging &&
-        slots.map(slot => {
-          const occupied = isSlotOccupied(slot.position);
-
-          return (
-            <mesh
-              key={slot.id}
-              position={slot.position}
-              onClick={() => handlePlace(slot)}
-            >
-              <cylinderGeometry
-                args={[SLOT_RADIUS, SLOT_RADIUS, SLOT_HEIGHT, 24]}
-              />
-              <meshStandardMaterial
-                color={occupied ? '#ff6b6b' : '#ffffff'}
-                transparent
-                opacity={0.7}
-              />
-            </mesh>
-          );
-        })}
     </group>
   );
 };
