@@ -26,8 +26,8 @@ const SLOT_RADIUS = 0.42;
 const SLOT_HEIGHT = 0.02;
 
 // Vertical alignment
-const SLOT_Y_OFFSET = 0.015;       // placeholder above table
-const EQUIPMENT_Y_OFFSET = 0.18;   // equipment above placeholder
+const SLOT_Y_OFFSET = -1.51;       // placeholder above table
+const EQUIPMENT_Y_OFFSET = 0.74;   // equipment above placeholder
 
 // Right table layout (2 x 10)
 const RIGHT_COL_SPACING = 1.8;
