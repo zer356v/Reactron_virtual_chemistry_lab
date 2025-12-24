@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment, Grid, ContactShadows } from "@react-three/drei";
@@ -6,7 +5,7 @@ import { EnhancedLabEquipment } from "@/components/EnhancedLabEquipment";
 import { EquipmentRack } from "@/components/EquipmentRack";
 import { EnhancedLabTable } from "@/components/EnhancedLabTable";
 import { EnhancedChemicalLibrary } from "@/components/EnhancedChemicalLibrary";
-import { DragDropProvider } from "@/components/DragDropProvider";
+import { DragDropProvider, useDragDrop } from "@/components/DragDropProvider";
 import UserMenu from "@/components/UserMenu";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -43,10 +42,11 @@ import { FireEffect, Precipitation, UltraLightningV2, VolumetricSmoke  } from "@
 import LiveReactionPanel from "@/components/LiveReactionPanel";
 import * as THREE from "three";
 import { EffectComposer, Bloom, SSAO, ToneMapping } from "@react-three/postprocessing";
+import { ChemicalBottleModel } from "@/components/AdvancedEquipmentModels";
 
 
 
-
+// Update PlacedEquipment interface (around line 40)
 interface PlacedEquipment {
   id: string;
   position: [number, number, number];
@@ -54,14 +54,23 @@ interface PlacedEquipment {
   contents: string[];
   chemicalObjects: Array<{ name: string; volume: number; color: string }>;
   totalVolume: number;
+  
+  // Bottle-specific fields
+  chemical?: {
+    name: string;
+    formula: string;
+    color: string;
+    concentration: number;
+  };
+  volumeRemaining?: number;
+  maxVolume?: number;
+  lastRefillTime?: number; // 🔥 NEW: Track when last refilled
 }
-
 interface ExperimentState {
   status: "idle" | "active" | "paused" | "completed";
   startTime?: Date;
   currentSession?: string;
   autoSaveEnabled: boolean;
-  // endTime might be present in saved state
   endTime?: Date;
 }
 
@@ -69,9 +78,7 @@ const STORAGE_KEY = "virtual-lab-state";
 
 const ScienceLab = () => {
   const [placedEquipment, setPlacedEquipment] = useState<PlacedEquipment[]>([]);
-  const [selectedEquipment, setSelectedEquipment] = useState<string | null>(
-    null
-  );
+  const [selectedEquipment, setSelectedEquipment] = useState<string | null>(null);
   const [reactions, setReactions] = useState<any[]>([]);
   const [experimentState, setExperimentState] = useState<ExperimentState>({
     status: "idle",
@@ -99,12 +106,10 @@ const ScienceLab = () => {
       { id, type, position, intensity }
     ]);
 
-    // auto-remove after duration
     setTimeout(() => {
       setActiveEffects(prev => prev.filter(e => e.id !== id));
     }, 5000);
   };
-
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -114,7 +119,6 @@ const ScienceLab = () => {
       setPlacedEquipment(parsed.placedEquipment || []);
       setReactions(parsed.reactions || []);
 
-      // ✅ Restore experiment state with date fix
       setExperimentState(() => {
         const state: ExperimentState =
           parsed.experimentState || {
@@ -132,7 +136,6 @@ const ScienceLab = () => {
 
       setIsExperimentStarted(parsed.isExperimentStarted || false);
 
-      // ✅ Restore score & badges correctly
       if (parsed.score) {
         for (let i = 0; i < Math.floor(parsed.score / 10); i++) {
           scoring.award(10);
@@ -144,7 +147,6 @@ const ScienceLab = () => {
     }
   }, []);
 
-  // Persist state to localStorage
   useEffect(() => {
     const data = {
       placedEquipment,
@@ -164,7 +166,6 @@ const ScienceLab = () => {
     scoring.badges,
   ]);
 
-  // Experiment protection (warn before leaving)
   useExperimentProtection({
     isExperimentActive: isExperimentStarted,
     onBeforeUnload: () => {
@@ -172,7 +173,6 @@ const ScienceLab = () => {
     },
   });
 
-  // Auto-save to backend every 60s
   useEffect(() => {
     if (!isExperimentStarted || !experimentState.autoSaveEnabled || !user)
       return;
@@ -293,8 +293,7 @@ const ScienceLab = () => {
     if (!isExperimentStarted)
       return toast({
         title: "Experiment Not Started",
-        description:
-          "Click 'Start' in Lab Controls to begin experimenting.",
+        description: "Click 'Start' in Lab Controls to begin experimenting.",
         variant: "destructive",
       });
 
@@ -330,17 +329,47 @@ const ScienceLab = () => {
     });
   };
 
-  const handleEquipmentPlace = (
-    equipmentId: string,
-    position: [number, number, number]
-  ) => {
-    if (!isExperimentStarted)
-      return toast({
-        title: "Experiment Not Started",
-        description: "Click 'Start' to place equipment.",
-        variant: "destructive",
-      });
+const handleEquipmentPlace = (
+  equipmentId: string,
+  position: [number, number, number],
+  itemData?: any
+) => {
+  if (!isExperimentStarted)
+    return toast({
+      title: "Experiment Not Started",
+      description: "Click 'Start' to place equipment.",
+      variant: "destructive",
+    });
 
+  // 🔥 Check if placing a bottle
+  if (itemData?.type === "chemical-bottle") {
+    console.log("🧪 Placing bottle with data:", itemData);
+    
+    setPlacedEquipment((prev) => [
+      ...prev,
+      {
+        id: equipmentId,
+        position,
+        type: "chemical-bottle",
+        contents: [],
+        chemicalObjects: [],
+        totalVolume: 0,
+        
+        // 🔥 Bottle-specific data - ALWAYS 500ml initially
+        chemical: itemData.chemical,
+        volumeRemaining: 500, // 🔥 ALWAYS START FULL
+        maxVolume: 500,
+        lastRefillTime: Date.now(), // 🔥 Track refill time
+      },
+    ]);
+    
+    scoring.award(10, `Placed ${itemData.chemical.name} bottle`);
+    toast({
+      title: "Bottle Placed 🧪",
+      description: `${itemData.chemical.name} bottle (500ml) placed on workbench.`,
+    });
+  } else {
+    // Regular equipment
     setPlacedEquipment((prev) => [
       ...prev,
       {
@@ -352,10 +381,71 @@ const ScienceLab = () => {
         totalVolume: 0,
       },
     ]);
+    
     scoring.award(10, `Placed ${equipmentId}`);
     toast({
       title: "Equipment Placed",
-      description: `${equipmentId} has been placed on the workbench.`,
+      description: `${equipmentId} placed on workbench.`,
+    });
+  }
+};
+
+// 🔥 NEW: Auto-refill empty bottles
+const handleBottleAutoRefill = (bottleId: string) => {
+  setPlacedEquipment((prev) =>
+    prev.map((eq) => {
+      if (eq.id === bottleId && eq.type === "chemical-bottle") {
+        const timeSinceRefill = Date.now() - (eq.lastRefillTime || 0);
+        
+        // Only refill if empty and 5 seconds have passed
+        if (eq.volumeRemaining === 0 && timeSinceRefill > 5000) {
+          toast({
+            title: "Bottle Refilled 🔄",
+            description: `${eq.chemical?.name} bottle refilled to 500ml`,
+          });
+          
+          return {
+            ...eq,
+            volumeRemaining: 500,
+            lastRefillTime: Date.now(),
+          };
+        }
+      }
+      return eq;
+    })
+  );
+};
+
+// 🔥 NEW: Check for empty bottles every 2 seconds
+useEffect(() => {
+  const interval = setInterval(() => {
+    placedEquipment.forEach((eq) => {
+      if (eq.type === "chemical-bottle" && eq.volumeRemaining === 0) {
+        handleBottleAutoRefill(eq.id);
+      }
+    });
+  }, 2000);
+
+  return () => clearInterval(interval);
+}, [placedEquipment]);
+
+  // 🔥 MOVE/REMOVE HANDLERS - RIGHT AFTER handleEquipmentPlace
+  const handleEquipmentMove = (id: string, newPosition: [number, number, number]) => {
+    if (!isExperimentStarted) return;
+    
+    setPlacedEquipment(prev =>
+      prev.map(eq => eq.id === id ? { ...eq, position: newPosition } : eq)
+    );
+  };
+
+  const handleEquipmentRemove = (id: string) => {
+    if (!isExperimentStarted) return;
+    
+    setPlacedEquipment(prev => prev.filter(eq => eq.id !== id));
+    
+    toast({
+      title: "Equipment Removed",
+      description: "Equipment has been removed from the workbench.",
     });
   };
 
@@ -375,9 +465,6 @@ const ScienceLab = () => {
     const vol = Number(volume || 0);
     let updatedEquipment: any = null;
 
-    // -----------------------------------------------
-    // 1) UPDATE EQUIPMENT CONTENTS
-    // -----------------------------------------------
     setPlacedEquipment((prev) =>
       prev.map((eq) => {
         if (eq.id !== equipmentId) return eq;
@@ -410,15 +497,11 @@ const ScienceLab = () => {
       description: `${chemical.name} (${vol} ml) added to equipment.`,
     });
 
-    // Need at least 2 chemicals to trigger a reaction
     if (!updatedEquipment || updatedEquipment.chemicalObjects.length < 2) return;
 
     const A = updatedEquipment.chemicalObjects.at(-2);
     const B = updatedEquipment.chemicalObjects.at(-1);
 
-    // -----------------------------------------------
-    // 2) CALL BACKEND → DEEPSEEK AI
-    // -----------------------------------------------
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_SERVER_URL}/api/reaction`,
@@ -432,9 +515,6 @@ const ScienceLab = () => {
 
       const result = response.data;
 
-      // -----------------------------------------------
-      // 3) UPDATE REACTION HISTORY
-      // -----------------------------------------------
       setReactions((prev) => [...prev, result]);
       reactionEngine.reactionHistory.push(result);
 
@@ -458,9 +538,6 @@ const ScienceLab = () => {
         description: result.description || "Chemical reaction detected.",
       });
 
-      // -----------------------------------------------
-      // 4) AUTOMATED VISUAL FX BASED ON AI RESULT
-      // -----------------------------------------------
       const pos = updatedEquipment.position || [0, 0, 0];
 
       if (result.energy > 50) spawnEffect("lightning", pos, 1.2);
@@ -468,39 +545,37 @@ const ScienceLab = () => {
       if (result.gas) spawnEffect("smoke", pos, 1);
       if (result.precipitate) spawnEffect("precipitation", pos, 1);
 
-    if (result.outputChemical) {
-      setPlacedEquipment(prev =>
-        prev.map(eq => {
-          if (eq.id !== equipmentId) return eq;
+      if (result.outputChemical) {
+        setPlacedEquipment(prev =>
+          prev.map(eq => {
+            if (eq.id !== equipmentId) return eq;
 
-          return {
-            ...eq,
-            chemicalObjects: [
-              {
-                name: result.outputChemical,
-                volume: Number(result.outputVolume || 0),
-                color: result.finalColor || "#cccccc",
-              }
-            ],
-            contents: [result.outputChemical],
-            totalVolume: Number(result.outputVolume || 0)
-          };
-        })
-      );
-    }
+            return {
+              ...eq,
+              chemicalObjects: [
+                {
+                  name: result.outputChemical,
+                  volume: Number(result.outputVolume || 0),
+                  color: result.finalColor || "#cccccc",
+                }
+              ],
+              contents: [result.outputChemical],
+              totalVolume: Number(result.outputVolume || 0)
+            };
+          })
+        );
+      }
 
     } catch (err) {
       console.error("AI Reaction Error:", err);
     }
   };
 
-
   const handleChemicalSelect = (chemical: any) => {
     if (!isExperimentStarted)
       return toast({
         title: "Experiment Not Started",
-        description:
-          "Click 'Start' in Lab Controls to begin experimenting.",
+        description: "Click 'Start' in Lab Controls to begin experimenting.",
         variant: "destructive",
       });
     if (selectedEquipment) handleChemicalAdd(selectedEquipment, chemical, 5);
@@ -535,7 +610,6 @@ const ScienceLab = () => {
 
   return (
     <div className="h-screen flex flex-col bg-[#f3f4f6] text-slate-900">
-      {/* Floating score & helpers */}
       <SafetyWarnings
         alerts={reactionEngine.safetyAlerts}
         onClear={reactionEngine.clearSafetyAlerts}
@@ -548,42 +622,39 @@ const ScienceLab = () => {
         }
       />
 
-      {/* Quick Reaction Alert */}
-        {reactions.length > 0 && (
-          <div className="fixed bottom-4 left-4 z-50 bg-white border border-slate-300 shadow-xl rounded-lg px-4 py-3 w-72">
-            <div className="text-sm font-bold text-slate-700">
-              {reactions[reactions.length - 1].reactionName}
-            </div>
-
-            <div className="text-xs text-slate-600 mt-1">
-              {reactions[reactions.length - 1].description}
-            </div>
-
-            {reactions[reactions.length - 1].equation && (
-              <div className="text-xs text-slate-500 mt-1">
-                <strong>Equation:</strong> {reactions[reactions.length - 1].equation}
-              </div>
-            )}
-
-            {reactions[reactions.length - 1].colorChange && (
-              <div className="text-xs mt-1">
-                <strong>Color Change:</strong>{" "}
-                {reactions[reactions.length - 1].colorChange}
-              </div>
-            )}
-
-            {reactions[reactions.length - 1].gas && (
-              <div className="text-xs mt-1">
-                <strong>Gas Released:</strong>{" "}
-                {reactions[reactions.length - 1].gas}
-              </div>
-            )}
+      {reactions.length > 0 && (
+        <div className="fixed bottom-4 left-4 z-50 bg-white border border-slate-300 shadow-xl rounded-lg px-4 py-3 w-72">
+          <div className="text-sm font-bold text-slate-700">
+            {reactions[reactions.length - 1].reactionName}
           </div>
-        )}
 
+          <div className="text-xs text-slate-600 mt-1">
+            {reactions[reactions.length - 1].description}
+          </div>
+
+          {reactions[reactions.length - 1].equation && (
+            <div className="text-xs text-slate-500 mt-1">
+              <strong>Equation:</strong> {reactions[reactions.length - 1].equation}
+            </div>
+          )}
+
+          {reactions[reactions.length - 1].colorChange && (
+            <div className="text-xs mt-1">
+              <strong>Color Change:</strong>{" "}
+              {reactions[reactions.length - 1].colorChange}
+            </div>
+          )}
+
+          {reactions[reactions.length - 1].gas && (
+            <div className="text-xs mt-1">
+              <strong>Gas Released:</strong>{" "}
+              {reactions[reactions.length - 1].gas}
+            </div>
+          )}
+        </div>
+      )}
 
       <DragDropProvider>
-        {/* Top Adobe-style toolbar */}
         <header className="flex items-center justify-between px-5 py-2.5 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
           <div className="flex items-center gap-4">
             <button
@@ -598,24 +669,14 @@ const ScienceLab = () => {
               />
             </button>
 
-            {/* File / Edit style text (non-clickable hint, Adobe-like) */}
             <div className="hidden lg:flex items-center gap-4 text-[14px] text-slate-500">
-              <span className="hover:text-slate-800 cursor-default">
-                File
-              </span>
-              <span className="hover:text-slate-800 cursor-default">
-                Edit
-              </span>
-              <span className="hover:text-slate-800 cursor-default">
-                View
-              </span>
-              <span className="hover:text-slate-800 cursor-default">
-                Window
-              </span>
+              <span className="hover:text-slate-800 cursor-default">File</span>
+              <span className="hover:text-slate-800 cursor-default">Edit</span>
+              <span className="hover:text-slate-800 cursor-default">View</span>
+              <span className="hover:text-slate-800 cursor-default">Window</span>
             </div>
           </div>
 
-          {/* Center: main experiment controls Adobe-style */}
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -651,7 +712,6 @@ const ScienceLab = () => {
               <span className="text-xs">Save</span>
             </Button>
 
-            {/* Compact advanced Lab Control menu (gear icon) */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -684,7 +744,6 @@ const ScienceLab = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Experiment status chip */}
             <div className="hidden md:flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1 bg-slate-50 text-[11px] text-slate-600">
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -698,17 +757,12 @@ const ScienceLab = () => {
           </div>
         </header>
 
-        {/* Main Adobe-style layout */}
         <div className="flex flex-1 min-h-0 px-3 pb-3 pt-2 gap-3">
-          {/* Left vertical tool rail (Adobe-like) */}
-          {/* Left Live Reaction Panel */}
           <div
             className={`${
               leftCollapsed ? "w-10" : "w-64"
             } transition-all duration-300 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden relative`}
           >
-
-            {/* Collapse button */}
             <button
               onClick={() => setLeftCollapsed((v) => !v)}
               className="absolute top-2 right-2 z-20 px-2 py-1 text-[10px] bg-white border rounded shadow"
@@ -716,7 +770,6 @@ const ScienceLab = () => {
               {leftCollapsed ? "▶" : "◀"}
             </button>
 
-            {/* Only render panel when open */}
             {!leftCollapsed && (
               <LiveReactionPanel
                 placedEquipment={placedEquipment}
@@ -724,7 +777,7 @@ const ScienceLab = () => {
               />
             )}
           </div>
-          {/* Center workspace */}
+
           <div className="flex-1 min-w-0 flex flex-col">
             <div className="flex items-center justify-between mb-1.5 px-1">
               <div className="flex flex-col">
@@ -745,30 +798,27 @@ const ScienceLab = () => {
             </div>
 
             <div className="relative flex-1 bg-[#e5e7eb] border border-slate-200 rounded-2xl shadow-inner overflow-hidden">
-            <Canvas
-              camera={{ position: [0, 6, 18], fov: 32 }}
-              shadows
-              dpr={[1, 2]}
-              gl={{
-                antialias: true,
-                toneMapping: THREE.ACESFilmicToneMapping,
-                outputColorSpace: THREE.SRGBColorSpace,
-              }}
-              className="w-full h-full"
-            >
+              <Canvas
+                camera={{ position: [0, 6, 18], fov: 32 }}
+                shadows
+                dpr={[1, 2]}
+                gl={{
+                  antialias: true,
+                  toneMapping: THREE.ACESFilmicToneMapping,
+                  outputColorSpace: THREE.SRGBColorSpace,
+                }}
+                className="w-full h-full"
+              >
+                <ambientLight intensity={0.25} />
 
-              {/* --- GLOBAL LIGHTING --- */}
-              <ambientLight intensity={0.25} />
+                <directionalLight
+                  position={[10, 15, 8]}
+                  intensity={1.3}
+                  castShadow
+                  shadow-mapSize={[4096, 4096]}
+                  shadow-bias={-0.0002}
+                />
 
-              <directionalLight
-                position={[10, 15, 8]}
-                intensity={1.3}
-                castShadow
-                shadow-mapSize={[4096, 4096]}
-                shadow-bias={-0.0002}
-              />
-
-              {/* Soft ground contact shadows */}
                 <ContactShadows
                   opacity={0.3}
                   scale={12}
@@ -777,95 +827,109 @@ const ScienceLab = () => {
                   position={[0, -0.5, 0]}
                 />
 
+                <Environment files="/hdri/studio.hdr" background={false} blur={0.15} />
 
-              {/* Realistic HDRI Lighting */}
-              <Environment files="/hdri/studio.hdr" background={false} blur={0.15} />
+                <EffectComposer>
+                  <Bloom
+                    intensity={0.35}
+                    luminanceThreshold={0.4}
+                    luminanceSmoothing={0.25}
+                  />
+                  <SSAO
+                    samples={32}
+                    rings={7}
+                    radius={0.12}
+                    intensity={18}
+                    luminanceInfluence={0.5}
+                    distanceScaling={true}
+                    worldDistanceThreshold={0.3}
+                    worldDistanceFalloff={0.1}
+                    worldProximityThreshold={0.03}
+                    worldProximityFalloff={0.01}
+                  />
+                  <ToneMapping adaptive />
+                </EffectComposer>
 
-              {/* --- POST PROCESSING EFFECTS --- */}
-              <EffectComposer>
-              <Bloom
-                intensity={0.35}
-                luminanceThreshold={0.4}
-                luminanceSmoothing={0.25}
-              />
-              <SSAO
-                samples={32}
-                rings={7}
-                radius={0.12}
-                intensity={18}
-                luminanceInfluence={0.5}
-                distanceScaling={true}
-                worldDistanceThreshold={0.3}
-                worldDistanceFalloff={0.1}
-                worldProximityThreshold={0.03}
-                worldProximityFalloff={0.01}
-              />
-              <ToneMapping adaptive />
-            </EffectComposer>
-              {/* Camera Controls */}
-              <OrbitControls enableZoom enableRotate />
+                <OrbitControls enableZoom enableRotate />
 
-              {/* --- LAB TABLE --- */}
-              <EnhancedLabTable
-                onEquipmentPlace={handleEquipmentPlace}
-                placedEquipment={placedEquipment}
-              />
-
-              {/* --- EQUIPMENT MODELS --- */}
-              {placedEquipment.map((eq) => (
-                <EnhancedLabEquipment
-                  key={eq.id}
-                  selectedEquipment={selectedEquipment}
-                  setSelectedEquipment={setSelectedEquipment}
-                  reactions={reactions}
-                  setReactions={setReactions}
-                  position={eq.position}
-                  equipmentType={eq.type}
-                  equipmentId={eq.id}
-                  equipmentContents={eq.contents}
-                  chemicalObjects={eq.chemicalObjects}
-                  totalVolume={eq.totalVolume}
-                  onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
-                  onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
+                <EnhancedLabTable
+                  onEquipmentPlace={handleEquipmentPlace}
+                  onEquipmentMove={handleEquipmentMove}
+                  onEquipmentRemove={handleEquipmentRemove}
+                  placedEquipment={placedEquipment}
                 />
-              ))}
 
-              {/* --- REACTION VISUAL FX --- */}
-              {activeEffects.map((fx) => {
-                if (fx.type === "lightning")
-                  return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {/* 🔥 RENDER REGULAR EQUIPMENT (NOT bottles) */}
+                {placedEquipment
+                  .filter(eq => eq.type !== "chemical-bottle")
+                  .map((eq) => (
+                    <EnhancedLabEquipment
+                      key={eq.id}
+                      selectedEquipment={selectedEquipment}
+                      setSelectedEquipment={setSelectedEquipment}
+                      reactions={reactions}
+                      setReactions={setReactions}
+                      position={eq.position}
+                      equipmentType={eq.type}
+                      equipmentId={eq.id}
+                      equipmentContents={eq.contents}
+                      chemicalObjects={eq.chemicalObjects}
+                      totalVolume={eq.totalVolume}
+                      onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
+                      onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
+                    />
+                  ))
+                }
 
-                if (fx.type === "fire")
-                  return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {/* 🔥 RENDER CHEMICAL BOTTLES */}
+                {placedEquipment
+                  .filter(eq => eq.type === "chemical-bottle")
+                  .map((bottle) => (
+                    <ChemicalBottleModel
+                      key={bottle.id}
+                      position={bottle.position}
+                      chemical={bottle.chemical!}
+                      volumeRemaining={bottle.volumeRemaining || 500}
+                      maxVolume={bottle.maxVolume || 500}
+                      isSelected={selectedEquipment === bottle.id}
+                      onClick={() => setSelectedEquipment(bottle.id)}
+                    />
+                  ))
+                }
 
-                if (fx.type === "smoke")
-                  return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {/* Visual Effects */}
+                {activeEffects.map((fx) => {
+                  if (fx.type === "lightning")
+                    return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                if (fx.type === "precipitation")
-                  return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                  if (fx.type === "fire")
+                    return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                return null;
-              })}
+                  if (fx.type === "smoke")
+                    return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-              {/* Floor Grid */}
-              <Grid
-                args={[30, 30]}
-                position={[0, -0.5, 0]}
-                cellSize={1}
-                cellThickness={0.5}
-                cellColor="#6B7280"
-                sectionSize={5}
-                sectionThickness={1}
-                sectionColor="#374151"
-                fadeDistance={25}
-                fadeStrength={1}
-              />
-            </Canvas>
+                  if (fx.type === "precipitation")
+                    return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
+                  return null;
+                })}
+
+                <Grid
+                  args={[30, 30]}
+                  position={[0, -0.5, 0]}
+                  cellSize={1}
+                  cellThickness={0.5}
+                  cellColor="#6B7280"
+                  sectionSize={5}
+                  sectionThickness={1}
+                  sectionColor="#374151"
+                  fadeDistance={25}
+                  fadeStrength={1}
+                />
+              </Canvas>
             </div>
           </div>
 
-          {/* Right inspector panel */}
           <div
             className={`${
               rightCollapsed ? "w-7" : "w-[320px] xl:w-[360px]"
@@ -880,7 +944,7 @@ const ScienceLab = () => {
                 <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between text-[11px] font-medium text-amber-700 gap-2">
                   <div className="flex items-center gap-2">
                     <Play className="w-3.5 h-3.5" />
-                    <span>Click “Start” to unlock chemicals & equipment.</span>
+                    <span>Click "Start" to unlock chemicals & equipment.</span>
                   </div>
                   <Button
                     size="sm"
@@ -962,7 +1026,6 @@ const ScienceLab = () => {
               </Tabs>
             </div>
 
-            {/* Collapse handle */}
             <button
               type="button"
               onClick={() => setRightCollapsed((v) => !v)}

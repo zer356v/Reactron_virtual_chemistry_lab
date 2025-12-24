@@ -11,8 +11,10 @@ import {
   Info,
   Flame,
   Skull,
+  Grip, // 🔥 NEW: Icon for dragging
 } from "lucide-react";
 import axios from "axios";
+import { useDragDrop } from "./DragDropProvider"; // 🔥 Import drag context
 
 interface Chemical {
   id: number;
@@ -45,7 +47,7 @@ interface EnhancedChemicalLibraryProps {
   selectedEquipment: string | null;
 }
 
-export const EnhancedChemicalLibrary: React.FC<
+export const EnhancedChemicalLibrary: React.FC <
   EnhancedChemicalLibraryProps
 > = ({ onChemicalSelect, selectedEquipment }) => {
   const [chemicals, setChemicals] = useState<Chemical[]>([]);
@@ -54,26 +56,32 @@ export const EnhancedChemicalLibrary: React.FC<
   const [selectedChemical, setSelectedChemical] = useState<Chemical | null>(
     null
   );
-useEffect(() => {
-  const fetchChemicals = async () => {
-    try {
-      const response = await axios.get(`${import.meta.env.VITE_SERVER_URL}/api/chemicals`);
 
-      if (response.status !== 200) throw new Error("Failed to fetch chemicals");
+  // 🔥 NEW: Get drag context
+  const { setDraggedItem, setIsDragging } = useDragDrop();
 
-      const data = Array.isArray(response.data) 
-        ? response.data 
-        : response.data.chemicals; // 🔥 important!
+  useEffect(() => {
+    const fetchChemicals = async () => {
+      try {
+        const response = await axios.get(
+          `${import.meta.env.VITE_SERVER_URL}/api/chemicals`
+        );
 
-      setChemicals(data || []); // no crash even if null
-    } catch (error) {
-      console.error("Error fetching chemicals:", error);
-    }
-  };
+        if (response.status !== 200)
+          throw new Error("Failed to fetch chemicals");
 
-  fetchChemicals();
-}, []);
+        const data = Array.isArray(response.data)
+          ? response.data
+          : response.data.chemicals;
 
+        setChemicals(data || []);
+      } catch (error) {
+        console.error("Error fetching chemicals:", error);
+      }
+    };
+
+    fetchChemicals();
+  }, []);
 
   const categories = [
     "all",
@@ -125,12 +133,33 @@ useEffect(() => {
     setSelectedChemical(chemical);
   };
 
+  // 🔥 NEW: Handle bottle drag start
+  const handleBottleDragStart = (chemical: Chemical, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection
+
+    // Create bottle drag item
+    setDraggedItem({
+      id: `bottle-${chemical.name}-${Date.now()}`,
+      type: "chemical-bottle", // 🔥 NEW TYPE
+      chemical: {
+        name: chemical.name,
+        formula: chemical.formula,
+        color: chemical.color,
+        concentration: parseFloat(chemical.concentration || "1.0"),
+      },
+      volumeRemaining: 500, // 🔥 Full 500ml bottle
+      maxVolume: 500,
+    });
+    setIsDragging(true);
+
+    console.log(`🧪 Dragging bottle: ${chemical.name} (500ml)`);
+  };
+
   const handleAddChemical = () => {
     if (selectedChemical && selectedEquipment) {
-      // Pass the complete chemical object with color information
       onChemicalSelect({
         ...selectedChemical,
-        color: selectedChemical.color, // Ensure color is included
+        color: selectedChemical.color,
       });
       setSelectedChemical(null);
     }
@@ -174,6 +203,13 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* 🔥 INFO TEXT */}
+          <div className="text-xs text-center p-2 bg-blue-50 border border-blue-200 rounded">
+            <p className="text-blue-700 font-medium">
+              💡 Drag bottle icon to place chemical bottle on table
+            </p>
+          </div>
+
           {/* Chemical List */}
           <ScrollArea className="h-40">
             <div className="space-y-2">
@@ -201,6 +237,15 @@ useEffect(() => {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      {/* 🔥 NEW: Bottle Drag Icon */}
+                      <button
+                        onMouseDown={(e) => handleBottleDragStart(chemical, e)}
+                        className="p-1 hover:bg-blue-100 rounded cursor-grab active:cursor-grabbing transition-colors"
+                        title="Drag to place bottle on table"
+                      >
+                        <Droplets className="h-4 w-4 text-blue-600" />
+                      </button>
+                      
                       {getDangerIcon(chemical.dangerLevel)}
                       <Badge variant="outline" className="text-xs capitalize">
                         {chemical.state}
@@ -261,8 +306,7 @@ useEffect(() => {
                 )}
                 <div className="text-xs text-center p-2 bg-muted/50 rounded">
                   <p className="text-muted-foreground">
-                    Select equipment, then use the volume controls to add
-                    chemicals
+                    🧪 Drag the bottle icon to place a 500ml bottle on the table
                   </p>
                 </div>
               </CardContent>

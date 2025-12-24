@@ -25,7 +25,120 @@ interface EnhancedLiquidProps {
   isHeated: boolean;
   position: [number, number, number];
   containerType: "beaker" | "flask";
+  
 }
+interface ChemicalBottleProps {
+  position: [number, number, number];
+  chemical: {
+    name: string;
+    formula: string;
+    color: string;
+    concentration: number;
+  };
+  volumeRemaining: number;
+  maxVolume: number; // 500ml
+  isSelected?: boolean;
+  onClick?: () => void;
+}
+export const ChemicalBottleModel: React.FC<ChemicalBottleProps> = ({
+  position,
+  chemical,
+  volumeRemaining,
+  maxVolume,
+  isSelected,
+  onClick,
+}) => {
+  const bottleRef = useRef<THREE.Group>(null);
+
+  // 🔥 Ensure volume is always 500ml by default
+  const currentVolume = volumeRemaining || 500;
+  const maxVol = maxVolume || 500;
+
+  return (
+    <group
+      ref={bottleRef}
+      position={[position[0], position[1] - 0.7, position[2]]}
+      scale={[0.15, 0.15, 0.15]} // 🔥 Slightly larger for visibility
+      onClick={onClick}
+    >
+      {/* Glass bottle - MORE VISIBLE */}
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[0.35, 0.35, 1.6, 32]} />
+        <meshPhysicalMaterial
+          transparent
+          opacity={0.4} // 🔥 More opaque
+          roughness={0.05}
+          metalness={0}
+          transmission={0.8}
+          thickness={0.2}
+          ior={1.45}
+          color="#E8F4F8" // 🔥 Slight blue tint for visibility
+        />
+      </mesh>
+
+      {/* Bottle neck */}
+      <mesh position={[0, 0.9, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.15, 0.15, 0.4, 24]} />
+        <meshPhysicalMaterial
+          transparent
+          opacity={0.4}
+          transmission={0.8}
+          color="#E8F4F8"
+        />
+      </mesh>
+
+      {/* 🔥 LIQUID - Always visible, filled by default */}
+      {currentVolume > 0 && (
+        <EnhancedLiquidRenderer
+          contents={[
+            {
+              name: chemical.name,
+              volume: currentVolume,
+              color: chemical.color,
+            },
+          ]}
+          totalVolume={currentVolume}
+          containerRadius={0.35}
+          containerHeight={1.4}
+          temperature={25}
+          isHeated={false}
+          position={[0, -0.6, 0]}
+          containerType="beaker"
+        />
+      )}
+
+      {/* 🔥 Label - Always show volume */}
+      {isSelected && (
+        <Html position={[0, 1.3, 0]} center>
+          <div className="px-3 py-2 bg-white/95 rounded-lg shadow-lg border-2 border-blue-400 text-center">
+            <div className="font-bold text-sm text-gray-800">
+              {chemical.formula}
+            </div>
+            <div className="text-xs text-gray-600 mt-1">
+              {chemical.concentration}M
+            </div>
+            <div className="text-lg font-bold text-blue-600 mt-1">
+              {currentVolume.toFixed(0)} / {maxVol} mL
+            </div>
+            {currentVolume === 0 && (
+              <div className="text-xs text-red-600 font-semibold mt-1">
+                Empty - Will auto-refill
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
+
+      {/* 🔥 Selection indicator */}
+      {isSelected && (
+        <mesh position={[0, -0.8, 0]}>
+          <cylinderGeometry args={[0.5, 0.5, 0.05, 32]} />
+          <meshBasicMaterial color="#3B82F6" transparent opacity={0.4} />
+        </mesh>
+      )}
+    </group>
+  );
+};
 
 const EnhancedLiquidRenderer: React.FC<EnhancedLiquidProps> = ({
   contents,
