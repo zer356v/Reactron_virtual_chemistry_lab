@@ -799,134 +799,165 @@ useEffect(() => {
 
             <div className="relative flex-1 bg-[#e5e7eb] border border-slate-200 rounded-2xl shadow-inner overflow-hidden">
               <Canvas
-                camera={{ position: [0, 6, 18], fov: 32 }}
-                shadows
-                dpr={[1, 2]}
-                gl={{
-                  antialias: true,
-                  toneMapping: THREE.ACESFilmicToneMapping,
-                  outputColorSpace: THREE.SRGBColorSpace,
-                }}
-                className="w-full h-full"
-              >
-                <ambientLight intensity={0.25} />
+              camera={{ position: [0, 6, 18], fov: 32 }}
+              shadows
+              dpr={[1, 1.5]} // 🔥 Reduced from [1, 2]
+              gl={{
+                antialias: true,
+                toneMapping: THREE.ACESFilmicToneMapping,
+                outputColorSpace: THREE.SRGBColorSpace,
+                powerPreference: "high-performance", // 🔥 Performance boost
+                alpha: false, // 🔥 No transparency needed
+                stencil: false, // 🔥 Disable stencil buffer
+              }}
+              className="w-full h-full"
+            >
+              {/* 🔥 IMPROVED LIGHTING SETUP */}
+              
+              {/* Main ambient light */}
+              <ambientLight intensity={0.5} color="#ffffff" />
 
-                <directionalLight
-                  position={[10, 15, 8]}
-                  intensity={1.3}
-                  castShadow
-                  shadow-mapSize={[4096, 4096]}
-                  shadow-bias={-0.0002}
+              {/* Main sun light */}
+              <directionalLight
+                position={[10, 15, 8]}
+                intensity={1.8}
+                castShadow
+                shadow-mapSize={[2048, 2048]} // 🔥 Reduced from 4096 (huge performance gain)
+                shadow-bias={-0.0003}
+                shadow-camera-left={-15}
+                shadow-camera-right={15}
+                shadow-camera-top={15}
+                shadow-camera-bottom={-15}
+                shadow-camera-near={0.5}
+                shadow-camera-far={50}
+              />
+
+              {/* Fill light (reduces harsh shadows) */}
+              <directionalLight
+                position={[-8, 10, -6]}
+                intensity={0.4}
+                color="#e3f2fd" // Slight blue tint
+              />
+
+              {/* Back rim light (adds depth) */}
+              <pointLight
+                position={[0, 8, -12]}
+                intensity={0.3}
+                color="#fff3e0" // Warm tone
+                distance={30}
+                decay={2}
+              />
+
+              {/* Hemisphere light (sky + ground) */}
+              <hemisphereLight
+                args={[
+                  "#87CEEB", // Sky color (light blue)
+                  "#8B7355", // Ground color (brown)
+                  0.4
+                ]}
+              />
+
+              {/* 🔥 SIMPLE BACKGROUND COLOR (instead of HDR) */}
+              <color attach="background" args={["#e5e7eb"]} />
+
+              {/* Contact shadows (optimized) */}
+              <ContactShadows
+                opacity={0.25} // 🔥 Reduced from 0.3
+                scale={12}
+                blur={1.2} // 🔥 Reduced from 1.5
+                far={1.5}
+                position={[0, -0.5, 0]}
+              />
+
+              {/* 🔥 LIGHTWEIGHT POST-PROCESSING (removed SSAO) */}
+              <EffectComposer>
+                <Bloom
+                  intensity={0.25} // 🔥 Reduced from 0.35
+                  luminanceThreshold={0.5} // 🔥 Higher threshold
+                  luminanceSmoothing={0.2} // 🔥 Reduced
                 />
+                {/* 🔥 REMOVED SSAO - Very expensive! */}
+                <ToneMapping adaptive />
+              </EffectComposer>
 
-                <ContactShadows
-                  opacity={0.3}
-                  scale={12}
-                  blur={1.5}
-                  far={1.5}
-                  position={[0, -0.5, 0]}
-                />
+              <OrbitControls enableZoom enableRotate />
 
-                <Environment files="/hdri/studio.hdr" background={false} blur={0.15} />
+              <EnhancedLabTable
+                onEquipmentPlace={handleEquipmentPlace}
+                onEquipmentMove={handleEquipmentMove}
+                onEquipmentRemove={handleEquipmentRemove}
+                placedEquipment={placedEquipment}
+              />
 
-                <EffectComposer>
-                  <Bloom
-                    intensity={0.35}
-                    luminanceThreshold={0.4}
-                    luminanceSmoothing={0.25}
+              {/* 🔥 RENDER REGULAR EQUIPMENT (NOT bottles) */}
+              {placedEquipment
+                .filter(eq => eq.type !== "chemical-bottle")
+                .map((eq) => (
+                  <EnhancedLabEquipment
+                    key={eq.id}
+                    selectedEquipment={selectedEquipment}
+                    setSelectedEquipment={setSelectedEquipment}
+                    reactions={reactions}
+                    setReactions={setReactions}
+                    position={eq.position}
+                    equipmentType={eq.type}
+                    equipmentId={eq.id}
+                    equipmentContents={eq.contents}
+                    chemicalObjects={eq.chemicalObjects}
+                    totalVolume={eq.totalVolume}
+                    onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
+                    onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
                   />
-                  <SSAO
-                    samples={32}
-                    rings={7}
-                    radius={0.12}
-                    intensity={18}
-                    luminanceInfluence={0.5}
-                    distanceScaling={true}
-                    worldDistanceThreshold={0.3}
-                    worldDistanceFalloff={0.1}
-                    worldProximityThreshold={0.03}
-                    worldProximityFalloff={0.01}
+                ))
+              }
+
+              {/* 🔥 RENDER CHEMICAL BOTTLES */}
+              {placedEquipment
+                .filter(eq => eq.type === "chemical-bottle")
+                .map((bottle) => (
+                  <ChemicalBottleModel
+                    key={bottle.id}
+                    position={bottle.position}
+                    chemical={bottle.chemical!}
+                    volumeRemaining={bottle.volumeRemaining || 500}
+                    maxVolume={bottle.maxVolume || 500}
+                    isSelected={selectedEquipment === bottle.id}
+                    onClick={() => setSelectedEquipment(bottle.id)}
                   />
-                  <ToneMapping adaptive />
-                </EffectComposer>
+                ))
+              }
 
-                <OrbitControls enableZoom enableRotate />
+              {/* Visual Effects */}
+              {activeEffects.map((fx) => {
+                if (fx.type === "lightning")
+                  return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                <EnhancedLabTable
-                  onEquipmentPlace={handleEquipmentPlace}
-                  onEquipmentMove={handleEquipmentMove}
-                  onEquipmentRemove={handleEquipmentRemove}
-                  placedEquipment={placedEquipment}
-                />
+                if (fx.type === "fire")
+                  return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                {/* 🔥 RENDER REGULAR EQUIPMENT (NOT bottles) */}
-                {placedEquipment
-                  .filter(eq => eq.type !== "chemical-bottle")
-                  .map((eq) => (
-                    <EnhancedLabEquipment
-                      key={eq.id}
-                      selectedEquipment={selectedEquipment}
-                      setSelectedEquipment={setSelectedEquipment}
-                      reactions={reactions}
-                      setReactions={setReactions}
-                      position={eq.position}
-                      equipmentType={eq.type}
-                      equipmentId={eq.id}
-                      equipmentContents={eq.contents}
-                      chemicalObjects={eq.chemicalObjects}
-                      totalVolume={eq.totalVolume}
-                      onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
-                      onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
-                    />
-                  ))
-                }
+                if (fx.type === "smoke")
+                  return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                {/* 🔥 RENDER CHEMICAL BOTTLES */}
-                {placedEquipment
-                  .filter(eq => eq.type === "chemical-bottle")
-                  .map((bottle) => (
-                    <ChemicalBottleModel
-                      key={bottle.id}
-                      position={bottle.position}
-                      chemical={bottle.chemical!}
-                      volumeRemaining={bottle.volumeRemaining || 500}
-                      maxVolume={bottle.maxVolume || 500}
-                      isSelected={selectedEquipment === bottle.id}
-                      onClick={() => setSelectedEquipment(bottle.id)}
-                    />
-                  ))
-                }
+                if (fx.type === "precipitation")
+                  return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                {/* Visual Effects */}
-                {activeEffects.map((fx) => {
-                  if (fx.type === "lightning")
-                    return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                return null;
+              })}
 
-                  if (fx.type === "fire")
-                    return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  if (fx.type === "smoke")
-                    return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  if (fx.type === "precipitation")
-                    return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
-
-                  return null;
-                })}
-
-                <Grid
-                  args={[30, 30]}
-                  position={[0, -0.5, 0]}
-                  cellSize={1}
-                  cellThickness={0.5}
-                  cellColor="#6B7280"
-                  sectionSize={5}
-                  sectionThickness={1}
-                  sectionColor="#374151"
-                  fadeDistance={25}
-                  fadeStrength={1}
-                />
-              </Canvas>
+              {/* Grid (optimized) */}
+              <Grid
+                args={[30, 30]}
+                position={[0, -0.5, 0]}
+                cellSize={1}
+                cellThickness={0.5}
+                cellColor="#6B7280"
+                sectionSize={5}
+                sectionThickness={1}
+                sectionColor="#374151"
+                fadeDistance={25}
+                fadeStrength={1}
+              />
+            </Canvas>
             </div>
           </div>
 

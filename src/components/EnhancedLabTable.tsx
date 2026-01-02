@@ -12,7 +12,7 @@ interface EnhancedLabTableProps {
   onEquipmentPlace: (
     id: string,
     position: [number, number, number],
-    itemData?: any // 🔥 ADD THIS - optional third parameter
+    itemData?: any
   ) => void;
   onEquipmentRemove?: (id: string) => void;
   onEquipmentMove?: (id: string, newPosition: [number, number, number]) => void;
@@ -36,7 +36,6 @@ const EQUIPMENT_Y_OFFSET = 0.7;
 const STACK_Y_OFFSET = 0.35;
 const STACK_RADIUS = 0.5;
 
-// 🔥 CAMERA & ZOOM CONFIG
 const CAMERA_CONFIG = {
   minDistance: 5,
   maxDistance: 40,
@@ -49,8 +48,8 @@ const CAMERA_CONFIG = {
   zoomSpeed: 0.8,
 };
 
-const MOVE_THRESHOLD = 5;
-const DOUBLE_CLICK_DELAY = 300;
+const MOVE_THRESHOLD = 10;
+const DOUBLE_CLICK_DELAY = 400;
 
 /* =========================
    Utils
@@ -109,6 +108,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   const [isMovingEquipment, setIsMovingEquipment] = useState(false);
   const [rightClickStartPos, setRightClickStartPos] = useState<{ x: number; y: number } | null>(null);
   const [hasMoved, setHasMoved] = useState(false);
+  const [originalPosition, setOriginalPosition] = useState<[number, number, number] | null>(null);
 
   const [lastRightClickTime, setLastRightClickTime] = useState(0);
   const [lastRightClickEquipmentId, setLastRightClickEquipmentId] = useState<string | null>(null);
@@ -175,7 +175,6 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   const handlePointerDown = (event: any) => {
     if (!tableBox) return;
 
-    // 🔥 LEFT CLICK: Placing new equipment/bottle from sidebar
     if (event.button === 0 && isDragging && draggedItem && hitPlaneRef.current) {
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObject(hitPlaneRef.current);
@@ -188,28 +187,23 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         return;
       }
 
-      // 🔥 NEW: Check if placing a bottle
-     // 🔥 NEW: Check if placing a bottle
-    if (draggedItem.type === "chemical-bottle") {
-      // Bottles don't stack - just place them
-      const finalPos: [number, number, number] = [
-        THREE.MathUtils.clamp(p.x, tableBox.min.x + 0.4, tableBox.max.x - 0.4),
-        p.y + EQUIPMENT_Y_OFFSET,
-        THREE.MathUtils.clamp(p.z, tableBox.min.z + 0.4, tableBox.max.z - 0.4),
-      ];
+      if (draggedItem.type === "chemical-bottle") {
+        const finalPos: [number, number, number] = [
+          THREE.MathUtils.clamp(p.x, tableBox.min.x + 0.4, tableBox.max.x - 0.4),
+          p.y + EQUIPMENT_Y_OFFSET,
+          THREE.MathUtils.clamp(p.z, tableBox.min.z + 0.4, tableBox.max.z - 0.4),
+        ];
 
-      console.log(`🧪 Placing bottle: ${draggedItem.chemical?.name} at`, finalPos);
-      
-      // 🔥 FIXED: Pass complete bottle data as third parameter
-      onEquipmentPlace(draggedItem.id, finalPos, draggedItem);
-      
-      setDraggedItem(null);
-      setIsDragging(false);
-      setHoveredId(null);
-      return;
-    }
+        console.log(`🧪 Placing bottle: ${draggedItem.chemical?.name} at`, finalPos);
+        
+        onEquipmentPlace(draggedItem.id, finalPos, draggedItem);
+        
+        setDraggedItem(null);
+        setIsDragging(false);
+        setHoveredId(null);
+        return;
+      }
 
-      // 🔥 Original equipment placement logic (beakers, flasks, etc.)
       const target = placedEquipment.find(eq => {
         const d = Math.hypot(eq.position[0] - p.x, eq.position[2] - p.z);
         return d < STACK_RADIUS;
@@ -228,67 +222,77 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         ];
       }
 
-     // 🔥 FIXED: Also pass draggedItem for regular equipment
-        onEquipmentPlace(draggedItem.id, finalPos, draggedItem);
-        setDraggedItem(null);
-        setIsDragging(false);
-        setHoveredId(null);
+      onEquipmentPlace(draggedItem.id, finalPos, draggedItem);
+      setDraggedItem(null);
+      setIsDragging(false);
+      setHoveredId(null);
       return;
     }
   };
 
   /* =========================
-     🔥 RIGHT CLICK DOWN - Detect double-click or start move
+     🔥 RIGHT CLICK DOWN - Start move or delete
   ========================= */
 
   const handleContextMenu = (event: any) => {
     event.preventDefault();
+    event.stopPropagation();
 
-    if (isDragging || isMovingEquipment) return;
+    if (isDragging) return;
 
     const clickedEquipmentId = findClickedEquipment();
     
-    if (clickedEquipmentId) {
-      const currentTime = Date.now();
-      const timeSinceLastClick = currentTime - lastRightClickTime;
+    if (!clickedEquipmentId) return;
 
-      // 🔥 CHECK FOR DOUBLE RIGHT-CLICK
-      if (
-        timeSinceLastClick < DOUBLE_CLICK_DELAY &&
-        lastRightClickEquipmentId === clickedEquipmentId
-      ) {
-        // DOUBLE RIGHT-CLICK = DELETE
-        console.log(`🗑️ Double right-click - Deleting: ${clickedEquipmentId}`);
-        if (onEquipmentRemove) {
-          onEquipmentRemove(clickedEquipmentId);
-        }
-        
-        setLastRightClickTime(0);
-        setLastRightClickEquipmentId(null);
-        return;
+    const currentTime = Date.now();
+    const timeSinceLastClick = currentTime - lastRightClickTime;
+
+    // 🔥 DOUBLE RIGHT-CLICK = DELETE
+    if (
+      timeSinceLastClick < DOUBLE_CLICK_DELAY &&
+      lastRightClickEquipmentId === clickedEquipmentId
+    ) {
+      console.log(`🗑️ Double right-click - Deleting: ${clickedEquipmentId}`);
+      
+      if (onEquipmentRemove) {
+        onEquipmentRemove(clickedEquipmentId);
       }
-
-      // 🔥 SINGLE RIGHT-CLICK - Prepare for potential move
-      setLastRightClickTime(currentTime);
-      setLastRightClickEquipmentId(clickedEquipmentId);
       
-      setRightClickStartPos({ x: event.clientX, y: event.clientY });
-      setMovingEquipmentId(clickedEquipmentId);
+      setLastRightClickTime(0);
+      setLastRightClickEquipmentId(null);
+      setMovingEquipmentId(null);
+      setRightClickStartPos(null);
+      setIsMovingEquipment(false);
       setHasMoved(false);
-      
-      console.log(`🎯 Right-click on: ${clickedEquipmentId}`);
+      setOriginalPosition(null);
+      return;
     }
+
+    // 🔥 SAVE ORIGINAL POSITION
+    const equipment = placedEquipment.find(eq => eq.id === clickedEquipmentId);
+    if (equipment) {
+      setOriginalPosition([...equipment.position] as [number, number, number]);
+    }
+
+    // 🔥 SINGLE RIGHT-CLICK - Prepare for move
+    setLastRightClickTime(currentTime);
+    setLastRightClickEquipmentId(clickedEquipmentId);
+    setRightClickStartPos({ x: event.clientX, y: event.clientY });
+    setMovingEquipmentId(clickedEquipmentId);
+    setHasMoved(false);
+    
+    console.log(`🎯 Right-click on: ${clickedEquipmentId} - Hold and drag to move`);
   };
 
   /* =========================
-     🔥 MOUSE MOVE - Detect if dragging
+     🔥 MOUSE MOVE - Detect dragging
   ========================= */
 
   const handlePointerMove = (event: any) => {
     if (!tableBox) return;
 
-    // 🔥 Check if user is dragging equipment
-    if (movingEquipmentId && rightClickStartPos && !isMovingEquipment) {
+    // 🔥 Check if should start moving equipment
+    if (movingEquipmentId && rightClickStartPos && !isMovingEquipment && !hasMoved) {
       const dx = event.clientX - rightClickStartPos.x;
       const dy = event.clientY - rightClickStartPos.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -305,8 +309,8 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
       }
     }
 
-    // 🔥 Move equipment if in moving mode
-    if (isMovingEquipment && movingEquipmentId && hitPlaneRef.current && onEquipmentMove) {
+    // 🔥 FIXED: Move equipment maintaining proper Y position
+    if (isMovingEquipment && movingEquipmentId && hitPlaneRef.current && onEquipmentMove && originalPosition) {
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObject(hitPlaneRef.current);
       if (!hits.length) return;
@@ -314,9 +318,10 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
       const p = hits[0].point;
 
       if (isInsideTable(p, tableBox)) {
+        // 🔥 KEEP ORIGINAL Y POSITION - Only update X and Z
         const newPos: [number, number, number] = [
           THREE.MathUtils.clamp(p.x, tableBox.min.x + 0.4, tableBox.max.x - 0.4),
-          EQUIPMENT_Y_OFFSET + tableBox.max.y,
+          originalPosition[1], // 🔥 USE ORIGINAL Y HEIGHT
           THREE.MathUtils.clamp(p.z, tableBox.min.z + 0.4, tableBox.max.z - 0.4),
         ];
         onEquipmentMove(movingEquipmentId, newPos);
@@ -324,7 +329,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
       return;
     }
 
-    // 🔥 Preview for new equipment placement (from sidebar)
+    // 🔥 Preview for new equipment placement
     if (isDragging && draggedItem && hitPlaneRef.current) {
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObject(hitPlaneRef.current);
@@ -337,7 +342,6 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         return;
       }
 
-      // 🔥 Bottles don't stack - skip stacking logic for bottles
       if (draggedItem.type === "chemical-bottle") {
         setHoveredId(null);
         return;
@@ -363,17 +367,18 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
   const handlePointerUp = (event: any) => {
     if (event.button === 2) {
       if (isMovingEquipment && movingEquipmentId) {
-        console.log(`✅ Placed equipment: ${movingEquipmentId}`);
-        setIsMovingEquipment(false);
-        
-        if (orbitControlsRef.current) {
-          orbitControlsRef.current.enabled = true;
-        }
+        console.log(`✅ Finished moving: ${movingEquipmentId}`);
+      }
+      
+      if (orbitControlsRef.current) {
+        orbitControlsRef.current.enabled = true;
       }
 
+      setIsMovingEquipment(false);
       setMovingEquipmentId(null);
       setRightClickStartPos(null);
       setHasMoved(false);
+      setOriginalPosition(null);
     }
   };
 
@@ -404,7 +409,10 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
     onEquipmentMove,
     onEquipmentRemove,
     lastRightClickTime,
-    lastRightClickEquipmentId
+    lastRightClickEquipmentId,
+    isDragging,
+    draggedItem,
+    originalPosition
   ]);
 
   /* =========================
@@ -428,6 +436,7 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         enablePan={true}
         enableRotate={true}
         target={[0, TABLE_OFFSET_Y, 0]}
+        makeDefault
       />
 
       <group
@@ -437,6 +446,33 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
         scale={[TABLE_SCALE, TABLE_SCALE, TABLE_SCALE]}
       >
         <primitive object={table.scene} />
+
+        {/* 🔥 BRIGHT TABLE SURFACE OVERLAY */}
+        {tableBox && (
+          <mesh
+            position={[
+              0,
+              (tableBox.max.y - TABLE_OFFSET_Y) / TABLE_SCALE + 0.002,
+              0,
+            ]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow
+          >
+            <planeGeometry 
+              args={[
+                (tableBox.max.x - tableBox.min.x) / TABLE_SCALE * 0.92,
+                (tableBox.max.z - tableBox.min.z) / TABLE_SCALE * 0.92,
+              ]} 
+            />
+            <meshStandardMaterial
+              color="#FFFFFF"
+              roughness={0.6}
+              metalness={0.05}
+              transparent
+              opacity={0.85}
+            />
+          </mesh>
+        )}
 
         {placedEquipment.map(eq => {
           const isBeingMoved = movingEquipmentId === eq.id && isMovingEquipment;
@@ -452,22 +488,22 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
                 <>
                   <mesh position={[0, -0.05, 0]}>
                     <cylinderGeometry args={[0.6, 0.6, 0.02, 32]} />
-                    <meshBasicMaterial color="yellow" transparent opacity={0.6} />
+                    <meshBasicMaterial color="#FFD700" transparent opacity={0.7} />
                   </mesh>
 
                   <mesh position={[0, -0.04, 0]}>
                     <ringGeometry args={[0.5, 0.65, 32]} />
                     <meshBasicMaterial 
-                      color="orange" 
+                      color="#FFA500" 
                       transparent 
-                      opacity={0.8}
+                      opacity={0.9}
                       side={THREE.DoubleSide}
                     />
                   </mesh>
 
                   <mesh position={[0, 0.9, 0]}>
                     <cylinderGeometry args={[0.25, 0.25, 0.03, 24]} />
-                    <meshBasicMaterial color="yellow" transparent opacity={0.7} />
+                    <meshBasicMaterial color="#FFD700" transparent opacity={0.8} />
                   </mesh>
 
                   {[0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((angle, i) => (
@@ -481,13 +517,13 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
                       rotation={[Math.PI / 2, 0, angle]}
                     >
                       <coneGeometry args={[0.1, 0.2, 8]} />
-                      <meshBasicMaterial color="orange" transparent opacity={0.8} />
+                      <meshBasicMaterial color="#FF8C00" transparent opacity={0.9} />
                     </mesh>
                   ))}
 
                   <mesh position={[0, 0.45, 0]}>
                     <cylinderGeometry args={[0.03, 0.03, 0.9, 16]} />
-                    <meshBasicMaterial color="yellow" transparent opacity={0.5} />
+                    <meshBasicMaterial color="#FFD700" transparent opacity={0.6} />
                   </mesh>
                 </>
               )}
@@ -496,12 +532,12 @@ export const EnhancedLabTable: React.FC<EnhancedLabTableProps> = ({
                 <>
                   <mesh position={[0, 0.5, 0]}>
                     <cylinderGeometry args={[0.4, 0.4, 0.05, 24]} />
-                    <meshBasicMaterial color="lime" transparent opacity={0.35} />
+                    <meshBasicMaterial color="#00FF00" transparent opacity={0.4} />
                   </mesh>
                   
                   <mesh position={[0, 0.7, 0]} rotation={[Math.PI, 0, 0]}>
                     <coneGeometry args={[0.15, 0.3, 8]} />
-                    <meshBasicMaterial color="lime" transparent opacity={0.6} />
+                    <meshBasicMaterial color="#00FF00" transparent opacity={0.7} />
                   </mesh>
                 </>
               )}
