@@ -44,18 +44,15 @@ import * as THREE from "three";
 import { EffectComposer, Bloom, SSAO, ToneMapping } from "@react-three/postprocessing";
 import { ChemicalBottleModel } from "@/components/AdvancedEquipmentModels";
 
-
-
-// Update PlacedEquipment interface (around line 40)
 interface PlacedEquipment {
   id: string;
   position: [number, number, number];
+  originalPosition?: [number, number, number];
   type: string;
   contents: string[];
   chemicalObjects: Array<{ name: string; volume: number; color: string }>;
   totalVolume: number;
   
-  // Bottle-specific fields
   chemical?: {
     name: string;
     formula: string;
@@ -64,8 +61,9 @@ interface PlacedEquipment {
   };
   volumeRemaining?: number;
   maxVolume?: number;
-  lastRefillTime?: number; // 🔥 NEW: Track when last refilled
+  lastRefillTime?: number;
 }
+
 interface ExperimentState {
   status: "idle" | "active" | "paused" | "completed";
   startTime?: Date;
@@ -188,7 +186,6 @@ const ScienceLab = () => {
     user,
   ]);
 
-  // --- Handlers ---
   const startExperiment = () => {
     if (isExperimentStarted) return;
     const sessionId = `exp-${Date.now()}`;
@@ -329,107 +326,101 @@ const ScienceLab = () => {
     });
   };
 
-const handleEquipmentPlace = (
-  equipmentId: string,
-  position: [number, number, number],
-  itemData?: any
-) => {
-  if (!isExperimentStarted)
-    return toast({
-      title: "Experiment Not Started",
-      description: "Click 'Start' to place equipment.",
-      variant: "destructive",
-    });
+  const handleEquipmentPlace = (
+    equipmentId: string,
+    position: [number, number, number],
+    itemData?: any
+  ) => {
+    if (!isExperimentStarted)
+      return toast({
+        title: "Experiment Not Started",
+        description: "Click 'Start' to place equipment.",
+        variant: "destructive",
+      });
 
-  // 🔥 Check if placing a bottle
-  if (itemData?.type === "chemical-bottle") {
-    console.log("🧪 Placing bottle with data:", itemData);
-    
-    setPlacedEquipment((prev) => [
-      ...prev,
-      {
-        id: equipmentId,
-        position,
-        type: "chemical-bottle",
-        contents: [],
-        chemicalObjects: [],
-        totalVolume: 0,
-        
-        // 🔥 Bottle-specific data - ALWAYS 500ml initially
-        chemical: itemData.chemical,
-        volumeRemaining: 500, // 🔥 ALWAYS START FULL
-        maxVolume: 500,
-        lastRefillTime: Date.now(), // 🔥 Track refill time
-      },
-    ]);
-    
-    scoring.award(10, `Placed ${itemData.chemical.name} bottle`);
-    toast({
-      title: "Bottle Placed 🧪",
-      description: `${itemData.chemical.name} bottle (500ml) placed on workbench.`,
-    });
-  } else {
-    // Regular equipment
-    setPlacedEquipment((prev) => [
-      ...prev,
-      {
-        id: `${equipmentId}-${Date.now()}`,
-        position,
-        type: equipmentId,
-        contents: [],
-        chemicalObjects: [],
-        totalVolume: 0,
-      },
-    ]);
-    
-    scoring.award(10, `Placed ${equipmentId}`);
-    toast({
-      title: "Equipment Placed",
-      description: `${equipmentId} placed on workbench.`,
-    });
-  }
-};
+    if (itemData?.type === "chemical-bottle") {
+      console.log("🧪 Placing bottle with data:", itemData);
+      
+      setPlacedEquipment((prev) => [
+        ...prev,
+        {
+          id: equipmentId,
+          position,
+          originalPosition: position,
+          type: "chemical-bottle",
+          contents: [],
+          chemicalObjects: [],
+          totalVolume: 0,
+          chemical: itemData.chemical,
+          volumeRemaining: 500,
+          maxVolume: 500,
+          lastRefillTime: Date.now(),
+        },
+      ]);
+      
+      scoring.award(10, `Placed ${itemData.chemical.name} bottle`);
+      toast({
+        title: "Bottle Placed 🧪",
+        description: `${itemData.chemical.name} bottle (500ml) placed on workbench.`,
+      });
+    } else {
+      setPlacedEquipment((prev) => [
+        ...prev,
+        {
+          id: `${equipmentId}-${Date.now()}`,
+          position,
+          originalPosition: position,
+          type: equipmentId,
+          contents: [],
+          chemicalObjects: [],
+          totalVolume: 0,
+        },
+      ]);
+      
+      scoring.award(10, `Placed ${equipmentId}`);
+      toast({
+        title: "Equipment Placed",
+        description: `${equipmentId} placed on workbench.`,
+      });
+    }
+  };
 
-// 🔥 NEW: Auto-refill empty bottles
-const handleBottleAutoRefill = (bottleId: string) => {
-  setPlacedEquipment((prev) =>
-    prev.map((eq) => {
-      if (eq.id === bottleId && eq.type === "chemical-bottle") {
-        const timeSinceRefill = Date.now() - (eq.lastRefillTime || 0);
-        
-        // Only refill if empty and 5 seconds have passed
-        if (eq.volumeRemaining === 0 && timeSinceRefill > 5000) {
-          toast({
-            title: "Bottle Refilled 🔄",
-            description: `${eq.chemical?.name} bottle refilled to 500ml`,
-          });
+  const handleBottleAutoRefill = (bottleId: string) => {
+    setPlacedEquipment((prev) =>
+      prev.map((eq) => {
+        if (eq.id === bottleId && eq.type === "chemical-bottle") {
+          const timeSinceRefill = Date.now() - (eq.lastRefillTime || 0);
           
-          return {
-            ...eq,
-            volumeRemaining: 500,
-            lastRefillTime: Date.now(),
-          };
+          if (eq.volumeRemaining === 0 && timeSinceRefill > 5000) {
+            toast({
+              title: "Bottle Refilled 🔄",
+              description: `${eq.chemical?.name} bottle refilled to 500ml`,
+            });
+            
+            return {
+              ...eq,
+              volumeRemaining: 500,
+              lastRefillTime: Date.now(),
+            };
+          }
         }
-      }
-      return eq;
-    })
-  );
-};
+        return eq;
+      })
+    );
+  };
 
-// 🔥 NEW: Check for empty bottles every 2 seconds
-useEffect(() => {
-  const interval = setInterval(() => {
-    placedEquipment.forEach((eq) => {
-      if (eq.type === "chemical-bottle" && eq.volumeRemaining === 0) {
-        handleBottleAutoRefill(eq.id);
-      }
-    });
-  }, 2000);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      placedEquipment.forEach((eq) => {
+        if (eq.type === "chemical-bottle" && eq.volumeRemaining === 0) {
+          handleBottleAutoRefill(eq.id);
+        }
+      });
+    }, 2000);
 
-  return () => clearInterval(interval);
-}, [placedEquipment]);
+    return () => clearInterval(interval);
+  }, [placedEquipment]);
 
-  // 🔥 MOVE/REMOVE HANDLERS - RIGHT AFTER handleEquipmentPlace
   const handleEquipmentMove = (id: string, newPosition: [number, number, number]) => {
     if (!isExperimentStarted) return;
     
@@ -447,6 +438,162 @@ useEffect(() => {
       title: "Equipment Removed",
       description: "Equipment has been removed from the workbench.",
     });
+  };
+
+  const handleBottleClick = (bottleId: string) => {
+    const bottle = placedEquipment.find(eq => eq.id === bottleId);
+    
+    if (!bottle || bottle.volumeRemaining === 0) {
+      toast({
+        title: "Cannot Select",
+        description: "Bottle is empty or refilling",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSelectedEquipment(bottleId);
+    toast({
+      title: "Bottle Selected 💧",
+      description: "Use Pour Controls in left panel to pour into equipment",
+    });
+  };
+
+  // 🔥 NEW: Handle pour from left panel
+  const handlePourChemical = async (bottleId: string, targetId: string, amount: number) => {
+    const bottle = placedEquipment.find(eq => eq.id === bottleId);
+    const target = placedEquipment.find(eq => eq.id === targetId);
+
+    if (!bottle || !target || !bottle.chemical) {
+      toast({
+        title: "Pour Failed",
+        description: "Bottle or target equipment not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (amount > (bottle.volumeRemaining || 0)) {
+      toast({
+        title: "Insufficient Volume",
+        description: `Bottle only has ${bottle.volumeRemaining}mL remaining`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const chemical = bottle.chemical;
+
+    // Update volumes immediately
+    setPlacedEquipment(prev =>
+      prev.map(eq => {
+        if (eq.id === bottleId) {
+          return {
+            ...eq,
+            volumeRemaining: Math.max(0, (eq.volumeRemaining || 0) - amount),
+          };
+        }
+        if (eq.id === targetId) {
+          const newChemicals = [
+            ...(eq.chemicalObjects || []),
+            {
+              name: chemical.name,
+              volume: amount,
+              color: chemical.color || "#87CEEB",
+            },
+          ];
+
+          return {
+            ...eq,
+            totalVolume: (eq.totalVolume || 0) + amount,
+            contents: [...(eq.contents || []), chemical.name],
+            chemicalObjects: newChemicals,
+          };
+        }
+        return eq;
+      })
+    );
+
+    toast({
+      title: "Pour Complete! 💧",
+      description: `Added ${amount}mL of ${chemical.name} to ${target.type}`,
+    });
+
+    scoring.award(15, "Poured chemical");
+
+    // Check for reaction
+    setTimeout(() => {
+      const updatedTarget = placedEquipment.find(eq => eq.id === targetId);
+      if (updatedTarget && updatedTarget.chemicalObjects.length >= 2) {
+        const A = updatedTarget.chemicalObjects.at(-2);
+        const B = updatedTarget.chemicalObjects.at(-1);
+        if (A && B) {
+          checkForReaction(targetId, A, B);
+        }
+      }
+    }, 100);
+  };
+
+  const checkForReaction = async (equipmentId: string, chemA: any, chemB: any) => {
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_SERVER_URL}/api/reaction`,
+        {
+          chemicalA: chemA.name,
+          chemicalB: chemB.name,
+          volumeA: chemA.volume,
+          volumeB: chemB.volume,
+        }
+      );
+
+      const result = response.data;
+      setReactions((prev) => [...prev, result]);
+
+      if (result.danger) {
+        reactionEngine.safetyAlerts.push(result.danger);
+      }
+
+      scoring.award(20, result.reactionName);
+
+      toast({
+        title: result.reactionName || "Reaction Occurred!",
+        description: result.description || "Chemical reaction detected.",
+      });
+
+      const equipment = placedEquipment.find(eq => eq.id === equipmentId);
+      if (equipment) {
+        const pos = equipment.position;
+
+        if (result.energy > 50) spawnEffect("lightning", pos, 1.2);
+        if (result.energy > 80) spawnEffect("fire", pos, 1.5);
+        if (result.gas) spawnEffect("smoke", pos, 1);
+        if (result.precipitate) spawnEffect("precipitation", pos, 1);
+      }
+
+      if (result.outputChemical) {
+        setPlacedEquipment(prev =>
+          prev.map(eq => {
+            if (eq.id !== equipmentId) return eq;
+
+            return {
+              ...eq,
+              chemicalObjects: [
+                {
+                  name: result.outputChemical,
+                  volume: Number(result.outputVolume || 0),
+                  color: result.finalColor || "#cccccc",
+                }
+              ],
+              contents: [result.outputChemical],
+              totalVolume: Number(result.outputVolume || 0)
+            };
+          })
+        );
+      }
+
+    } catch (err) {
+      console.error("AI Reaction Error:", err);
+    }
   };
 
   const handleChemicalAdd = async (
@@ -502,73 +649,7 @@ useEffect(() => {
     const A = updatedEquipment.chemicalObjects.at(-2);
     const B = updatedEquipment.chemicalObjects.at(-1);
 
-    try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_SERVER_URL}/api/reaction`,
-        {
-          chemicalA: A.name,
-          chemicalB: B.name,
-          volumeA: A.volume,
-          volumeB: B.volume,
-        }
-      );
-
-      const result = response.data;
-
-      setReactions((prev) => [...prev, result]);
-      reactionEngine.reactionHistory.push(result);
-
-      if (result.danger) {
-        reactionEngine.safetyAlerts.push(result.danger);
-      }
-
-      console.log("AI FINAL REACTION DATA:", {
-        outputChemical: result.outputChemical,
-        outputVolume: result.outputVolume,
-        finalTemperature: result.finalTemperature,
-        finalColor: result.finalColor,
-        gas: result.gas,
-        precipitate: result.precipitate,
-      });
-
-      scoring.award(20, result.reactionName);
-
-      toast({
-        title: result.reactionName || "Reaction Occurred!",
-        description: result.description || "Chemical reaction detected.",
-      });
-
-      const pos = updatedEquipment.position || [0, 0, 0];
-
-      if (result.energy > 50) spawnEffect("lightning", pos, 1.2);
-      if (result.energy > 80) spawnEffect("fire", pos, 1.5);
-      if (result.gas) spawnEffect("smoke", pos, 1);
-      if (result.precipitate) spawnEffect("precipitation", pos, 1);
-
-      if (result.outputChemical) {
-        setPlacedEquipment(prev =>
-          prev.map(eq => {
-            if (eq.id !== equipmentId) return eq;
-
-            return {
-              ...eq,
-              chemicalObjects: [
-                {
-                  name: result.outputChemical,
-                  volume: Number(result.outputVolume || 0),
-                  color: result.finalColor || "#cccccc",
-                }
-              ],
-              contents: [result.outputChemical],
-              totalVolume: Number(result.outputVolume || 0)
-            };
-          })
-        );
-      }
-
-    } catch (err) {
-      console.error("AI Reaction Error:", err);
-    }
+    checkForReaction(equipmentId, A, B);
   };
 
   const handleChemicalSelect = (chemical: any) => {
@@ -774,6 +855,8 @@ useEffect(() => {
               <LiveReactionPanel
                 placedEquipment={placedEquipment}
                 reactions={reactions}
+                selectedEquipment={selectedEquipment}
+                onPourChemical={handlePourChemical}
               />
             )}
           </div>
@@ -799,165 +882,150 @@ useEffect(() => {
 
             <div className="relative flex-1 bg-[#e5e7eb] border border-slate-200 rounded-2xl shadow-inner overflow-hidden">
               <Canvas
-              camera={{ position: [0, 6, 18], fov: 32 }}
-              shadows
-              dpr={[1, 1.5]} // 🔥 Reduced from [1, 2]
-              gl={{
-                antialias: true,
-                toneMapping: THREE.ACESFilmicToneMapping,
-                outputColorSpace: THREE.SRGBColorSpace,
-                powerPreference: "high-performance", // 🔥 Performance boost
-                alpha: false, // 🔥 No transparency needed
-                stencil: false, // 🔥 Disable stencil buffer
-              }}
-              className="w-full h-full"
-            >
-              {/* 🔥 IMPROVED LIGHTING SETUP */}
-              
-              {/* Main ambient light */}
-              <ambientLight intensity={0.5} color="#ffffff" />
+                camera={{ position: [0, 6, 18], fov: 32 }}
+                shadows
+                dpr={[1, 1.5]}
+                gl={{
+                  antialias: true,
+                  toneMapping: THREE.ACESFilmicToneMapping,
+                  outputColorSpace: THREE.SRGBColorSpace,
+                  powerPreference: "high-performance",
+                  alpha: false,
+                  stencil: false,
+                }}
+                className="w-full h-full"
+              >
+                <ambientLight intensity={0.5} color="#ffffff" />
 
-              {/* Main sun light */}
-              <directionalLight
-                position={[10, 15, 8]}
-                intensity={1.8}
-                castShadow
-                shadow-mapSize={[2048, 2048]} // 🔥 Reduced from 4096 (huge performance gain)
-                shadow-bias={-0.0003}
-                shadow-camera-left={-15}
-                shadow-camera-right={15}
-                shadow-camera-top={15}
-                shadow-camera-bottom={-15}
-                shadow-camera-near={0.5}
-                shadow-camera-far={50}
-              />
-
-              {/* Fill light (reduces harsh shadows) */}
-              <directionalLight
-                position={[-8, 10, -6]}
-                intensity={0.4}
-                color="#e3f2fd" // Slight blue tint
-              />
-
-              {/* Back rim light (adds depth) */}
-              <pointLight
-                position={[0, 8, -12]}
-                intensity={0.3}
-                color="#fff3e0" // Warm tone
-                distance={30}
-                decay={2}
-              />
-
-              {/* Hemisphere light (sky + ground) */}
-              <hemisphereLight
-                args={[
-                  "#87CEEB", // Sky color (light blue)
-                  "#8B7355", // Ground color (brown)
-                  0.4
-                ]}
-              />
-
-              {/* 🔥 SIMPLE BACKGROUND COLOR (instead of HDR) */}
-              <color attach="background" args={["#e5e7eb"]} />
-
-              {/* Contact shadows (optimized) */}
-              <ContactShadows
-                opacity={0.25} // 🔥 Reduced from 0.3
-                scale={12}
-                blur={1.2} // 🔥 Reduced from 1.5
-                far={1.5}
-                position={[0, -0.5, 0]}
-              />
-
-              {/* 🔥 LIGHTWEIGHT POST-PROCESSING (removed SSAO) */}
-              <EffectComposer>
-                <Bloom
-                  intensity={0.25} // 🔥 Reduced from 0.35
-                  luminanceThreshold={0.5} // 🔥 Higher threshold
-                  luminanceSmoothing={0.2} // 🔥 Reduced
+                <directionalLight
+                  position={[10, 15, 8]}
+                  intensity={1.8}
+                  castShadow
+                  shadow-mapSize={[2048, 2048]}
+                  shadow-bias={-0.0003}
+                  shadow-camera-left={-15}
+                  shadow-camera-right={15}
+                  shadow-camera-top={15}
+                  shadow-camera-bottom={-15}
+                  shadow-camera-near={0.5}
+                  shadow-camera-far={50}
                 />
-                {/* 🔥 REMOVED SSAO - Very expensive! */}
-                <ToneMapping adaptive />
-              </EffectComposer>
 
-              <OrbitControls enableZoom enableRotate />
+                <directionalLight
+                  position={[-8, 10, -6]}
+                  intensity={0.4}
+                  color="#e3f2fd"
+                />
 
-              <EnhancedLabTable
-                onEquipmentPlace={handleEquipmentPlace}
-                onEquipmentMove={handleEquipmentMove}
-                onEquipmentRemove={handleEquipmentRemove}
-                placedEquipment={placedEquipment}
-              />
+                <pointLight
+                  position={[0, 8, -12]}
+                  intensity={0.3}
+                  color="#fff3e0"
+                  distance={30}
+                  decay={2}
+                />
 
-              {/* 🔥 RENDER REGULAR EQUIPMENT (NOT bottles) */}
-              {placedEquipment
-                .filter(eq => eq.type !== "chemical-bottle")
-                .map((eq) => (
-                  <EnhancedLabEquipment
-                    key={eq.id}
-                    selectedEquipment={selectedEquipment}
-                    setSelectedEquipment={setSelectedEquipment}
-                    reactions={reactions}
-                    setReactions={setReactions}
-                    position={eq.position}
-                    equipmentType={eq.type}
-                    equipmentId={eq.id}
-                    equipmentContents={eq.contents}
-                    chemicalObjects={eq.chemicalObjects}
-                    totalVolume={eq.totalVolume}
-                    onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
-                    onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
+                <hemisphereLight
+                  args={[
+                    "#87CEEB",
+                    "#8B7355",
+                    0.4
+                  ]}
+                />
+
+                <color attach="background" args={["#e5e7eb"]} />
+
+                <ContactShadows
+                  opacity={0.25}
+                  scale={12}
+                  blur={1.2}
+                  far={1.5}
+                  position={[0, -0.5, 0]}
+                />
+
+                <EffectComposer>
+                  <Bloom
+                    intensity={0.25}
+                    luminanceThreshold={0.5}
+                    luminanceSmoothing={0.2}
                   />
-                ))
-              }
+                  <ToneMapping adaptive />
+                </EffectComposer>
 
-              {/* 🔥 RENDER CHEMICAL BOTTLES */}
-              {placedEquipment
-                .filter(eq => eq.type === "chemical-bottle")
-                .map((bottle) => (
-                  <ChemicalBottleModel
-                    key={bottle.id}
-                    position={bottle.position}
-                    chemical={bottle.chemical!}
-                    volumeRemaining={bottle.volumeRemaining || 500}
-                    maxVolume={bottle.maxVolume || 500}
-                    isSelected={selectedEquipment === bottle.id}
-                    onClick={() => setSelectedEquipment(bottle.id)}
-                  />
-                ))
-              }
+                <OrbitControls enableZoom enableRotate />
 
-              {/* Visual Effects */}
-              {activeEffects.map((fx) => {
-                if (fx.type === "lightning")
-                  return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                <EnhancedLabTable
+                  onEquipmentPlace={handleEquipmentPlace}
+                  onEquipmentMove={handleEquipmentMove}
+                  onEquipmentRemove={handleEquipmentRemove}
+                  placedEquipment={placedEquipment}
+                />
 
-                if (fx.type === "fire")
-                  return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {placedEquipment
+                  .filter(eq => eq.type !== "chemical-bottle")
+                  .map((eq) => (
+                    <EnhancedLabEquipment
+                      key={eq.id}
+                      selectedEquipment={selectedEquipment}
+                      setSelectedEquipment={setSelectedEquipment}
+                      reactions={reactions}
+                      setReactions={setReactions}
+                      position={eq.position}
+                      equipmentType={eq.type}
+                      equipmentId={eq.id}
+                      equipmentContents={eq.contents}
+                      chemicalObjects={eq.chemicalObjects}
+                      totalVolume={eq.totalVolume}
+                      onVolumeChange={(newVol) => handleVolumeChange(eq.id, newVol)}
+                      onChemicalAdd={(chem, vol) => handleChemicalAdd(eq.id, chem, vol)}
+                    />
+                  ))
+                }
 
-                if (fx.type === "smoke")
-                  return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {placedEquipment
+                  .filter(eq => eq.type === "chemical-bottle")
+                  .map((bottle) => (
+                    <ChemicalBottleModel
+                      key={bottle.id}
+                      position={bottle.position}
+                      chemical={bottle.chemical!}
+                      volumeRemaining={bottle.volumeRemaining || 500}
+                      maxVolume={bottle.maxVolume || 500}
+                      isSelected={selectedEquipment === bottle.id}
+                      onClick={() => handleBottleClick(bottle.id)}
+                    />
+                  ))
+                }
 
-                if (fx.type === "precipitation")
-                  return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
+                {activeEffects.map((fx) => {
+                  if (fx.type === "lightning")
+                    return <UltraLightningV2 key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-                return null;
-              })}
+                  if (fx.type === "fire")
+                    return <FireEffect key={fx.id} position={fx.position} intensity={fx.intensity} />;
 
-              {/* Grid (optimized) */}
-              <Grid
-                args={[30, 30]}
-                position={[0, -0.5, 0]}
-                cellSize={1}
-                cellThickness={0.5}
-                cellColor="#6B7280"
-                sectionSize={5}
-                sectionThickness={1}
-                sectionColor="#374151"
-                fadeDistance={25}
-                fadeStrength={1}
-              />
-            </Canvas>
+                  if (fx.type === "smoke")
+                    return <VolumetricSmoke key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                  if (fx.type === "precipitation")
+                    return <Precipitation key={fx.id} position={fx.position} intensity={fx.intensity} />;
+
+                  return null;
+                })}
+
+                <Grid
+                  args={[30, 30]}
+                  position={[0, -0.5, 0]}
+                  cellSize={1}
+                  cellThickness={0.5}
+                  cellColor="#6B7280"
+                  sectionSize={5}
+                  sectionThickness={1}
+                  sectionColor="#374151"
+                  fadeDistance={25}
+                  fadeStrength={1}
+                />
+              </Canvas>
             </div>
           </div>
 
